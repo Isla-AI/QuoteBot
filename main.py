@@ -36,7 +36,7 @@ async def agent_loop(user_instruction: str, llm: LLMPlanner, browser: BrowserEng
         print(f"\n--- 步骤 {step + 1}/{max_steps} ---")
 
         # 1. 感知：获取当前页面信息
-        page_summary = browser.get_page_summary()
+        page_summary = await browser.get_page_summary()
         print(f"📄 页面摘要获取完成")
 
         # 2. 思考：让 LLM 决策下一步行动
@@ -70,7 +70,7 @@ async def agent_loop(user_instruction: str, llm: LLMPlanner, browser: BrowserEng
             print(f"📜 已滚动: {direction}")
         elif action == "EXTRACT":
             selector = params.get("selector", ".quote")
-            quotes = browser.extract_quotes(selector)
+            quotes = await browser.get_page_quotes()
             collected_quotes.extend(quotes)
             print(f"📝 已提取 {len(quotes)} 条名言")
         elif action == "BACK":
@@ -88,7 +88,7 @@ async def agent_loop(user_instruction: str, llm: LLMPlanner, browser: BrowserEng
     # 返回最终结果
     result = {
         "instruction": user_instruction,
-        "quotes": collected_quotes if collected_quotes else browser.get_page_quotes(),
+        "quotes": collected_quotes if collected_quotes else await browser.get_page_quotes(),
         "steps_taken": min(step + 1, max_steps),
     }
 
@@ -114,11 +114,15 @@ async def demo_mode():
         print(f"📋 演示任务 {i}/{len(demo_tasks)}: {task}")
         print(f"{'=' * 60}")
 
-        async with BrowserEngine() as browser:
+        browser = BrowserEngine()
+        await browser.start()
+        try:
             result = await agent_loop(task, llm, browser)
             DataParser.display_result(result)
             DataParser.save_result(result, f"output/demo_{i}.json")
             DataParser.generate_html_report(result, f"output/demo_{i}.html")
+        finally:
+            await browser.close()
 
         # 任务间隔
         if i < len(demo_tasks):
@@ -135,7 +139,9 @@ async def interactive_mode():
 
     llm = LLMPlanner()
 
-    async with BrowserEngine() as browser:
+    browser = BrowserEngine()
+    await browser.start()
+    try:
         while True:
             print()
             instruction = input("🗣️ 你的指令: ").strip()
@@ -150,6 +156,8 @@ async def interactive_mode():
             DataParser.display_result(result)
             DataParser.save_result(result, f"output/interactive_{len(instruction)}.json")
             DataParser.generate_html_report(result, f"output/interactive_{len(instruction)}.html")
+    finally:
+        await browser.close()
 
 
 async def main():
@@ -167,11 +175,15 @@ async def main():
     else:
         instruction = " ".join(sys.argv[1:])
         llm = LLMPlanner()
-        async with BrowserEngine() as browser:
+        browser = BrowserEngine()
+        await browser.start()
+        try:
             result = await agent_loop(instruction, llm, browser)
             DataParser.display_result(result)
             DataParser.save_result(result, "output/result.json")
             DataParser.generate_html_report(result, "output/result.html")
+        finally:
+            await browser.close()
 
 
 if __name__ == "__main__":
