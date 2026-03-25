@@ -31,6 +31,8 @@ async def agent_loop(user_instruction: str, llm: LLMPlanner, browser: BrowserEng
 
     collected_quotes = []
     max_steps = Config.MAX_STEPS
+    last_action = None
+    last_action_count = 0
 
     for step in range(max_steps):
         print(f"\n--- 步骤 {step + 1}/{max_steps} ---")
@@ -46,6 +48,17 @@ async def agent_loop(user_instruction: str, llm: LLMPlanner, browser: BrowserEng
         thought = decision.get("thought", "")
         action = decision.get("action", "")
         params = decision.get("params", {})
+
+        # 检测重复动作：同一动作连续执行超过 2 次则强制完成
+        if action == last_action:
+            last_action_count += 1
+        else:
+            last_action_count = 1
+            last_action = action
+
+        if last_action_count > 2 and action in ("EXTRACT", "SCROLL", "NAVIGATE"):
+            print(f"🔄 检测到重复动作 ({action} x{last_action_count})，强制完成任务")
+            break
 
         print(f"💭 思考: {thought}")
         print(f"🎬 动作: {action}")

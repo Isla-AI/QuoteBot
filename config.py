@@ -10,7 +10,7 @@ class Config:
     LLM_API_KEY = "sk-sp-e18e0f06fa3c428b90be9e639400fe8e"
     LLM_BASE_URL = "https://coding.dashscope.aliyuncs.com/v1"
     LLM_MODEL = "glm-5"
-    LLM_MAX_TOKENS = 50000
+    LLM_MAX_TOKENS = 2000
     LLM_TEMPERATURE = 0.3
 
     # Agent 配置
