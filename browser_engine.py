@@ -42,32 +42,44 @@ class BrowserEngine:
 
     async def click(self, target: str):
         """点击页面元素"""
+        link = await self._resolve_click_target(target)
+        if await link.count() == 0:
+            raise ValueError(f"页面上未找到可点击目标: {target}")
+
+        await link.first.click()
+        await self.page.wait_for_timeout(1000)
+
+    async def _resolve_click_target(self, target: str):
+        """根据目标文本解析最可能的链接"""
         target_lower = target.lower().strip()
         target_clean = target_lower.replace("→", "").replace("←", "").replace(" ", "")
 
         if target_clean in ("next", "下一页"):
-            link = self.page.locator("li.next a")
-        elif target_clean in ("previous", "上一页"):
-            link = self.page.locator("li.previous a")
-        elif target_clean in ("login", "登录"):
-            link = self.page.get_by_role("link", name="Login")
-        elif target_clean in ("about",):
-            link = self.page.locator("a[href*='/author/']").first
-        else:
-            # 先尝试直接匹配链接文本
-            link = self.page.locator(f"a:text-is('{target}')").first
-            if await link.count() == 0:
-                link = self.page.locator(f"a:has-text('{target}')").first
-            if await link.count() == 0:
-                # 尝试在 href 中匹配（作者名格式：Albert-Einstein）
-                href_target = target.replace(" ", "-")
-                link = self.page.locator(f"a[href*='/author/{href_target}']").first
-            if await link.count() == 0:
-                # 尝试匹配标签名
-                link = self.page.locator(f"a.tag:has-text('{target}')").first
+            return self.page.locator("li.next a")
+        if target_clean in ("previous", "上一页"):
+            return self.page.locator("li.previous a")
+        if target_clean in ("login", "登录"):
+            return self.page.get_by_role("link", name="Login")
+        if target_clean in ("about",):
+            return self.page.locator("a[href*='/author/']")
 
-        await link.click()
-        await self.page.wait_for_timeout(1000)
+        # 先尝试直接匹配链接文本
+        link = self.page.locator(f"a:text-is('{target}')")
+        if await link.count() > 0:
+            return link
+
+        link = self.page.locator(f"a:has-text('{target}')")
+        if await link.count() > 0:
+            return link
+
+        # 尝试在 href 中匹配（作者名格式：Albert-Einstein）
+        href_target = target.replace(" ", "-")
+        link = self.page.locator(f"a[href*='/author/{href_target}']")
+        if await link.count() > 0:
+            return link
+
+        # 尝试匹配标签名
+        return self.page.locator(f"a.tag:has-text('{target}')")
 
     async def scroll(self, direction: str = "down"):
         """滚动页面"""
@@ -88,6 +100,7 @@ class BrowserEngine:
         title = await self.page.title()
         html = await self.page.content()
         soup = BeautifulSoup(html, "lxml")
+        is_author_page = bool(soup.select_one("h3.author-title"))
 
         # 提取名言
         quotes = []
@@ -118,20 +131,22 @@ class BrowserEngine:
         summary = {
             "url": url,
             "title": title,
+            "page_type": "author" if is_author_page else "quotes",
             "quotes_count": len(quotes),
             "quotes": quotes,
             "navigation": nav_links,
-            "top_tags": list(set(tags))[:10],
+            "top_tags": list(dict.fromkeys(tags))[:10],
         }
 
         return json.dumps(summary, ensure_ascii=False, indent=2)
 
-    async def get_page_quotes(self) -> list:
+    async def get_page_quotes(self, author: str | None = None) -> list:
         """提取当前页面的所有名言（支持普通页和作者详情页）"""
         html = await self.page.content()
         soup = BeautifulSoup(html, "lxml")
 
         quotes = []
+        author_filter = (author or "").strip().lower()
 
         # 检查是否是作者详情页
         author_tag = soup.select_one("h3.author-title")
@@ -150,6 +165,8 @@ class BrowserEngine:
                 "author": author_name,
                 "tags": ["Born: " + born_info.strip()] if born_info else [],
             })
+            if author_filter and author_name.lower() != author_filter:
+                return []
             return quotes
 
         # 普通页面：提取名言
@@ -158,9 +175,12 @@ class BrowserEngine:
             author_el = q.select_one(".author")
             tag_els = q.select("a.tag")
             if text_el:
+                author_name = author_el.get_text(strip=True) if author_el else "未知"
+                if author_filter and author_name.lower() != author_filter:
+                    continue
                 quotes.append({
                     "text": text_el.get_text(strip=True).strip('\u201c\u201d'),
-                    "author": author_el.get_text(strip=True) if author_el else "未知",
+                    "author": author_name,
                     "tags": [t.get_text(strip=True) for t in tag_els],
                 })
 
